@@ -7,14 +7,197 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum GroupMemberRole {
+  MEMBER
+  ADMIN
+}
+
+enum ExpenseSplitMethod {
+  EQUAL
+  EXACT
+  PERCENTAGE
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  COMPLETED_WITH_ANOMALIES
+  FAILED
+}
+
+enum AnomalySeverity {
+  WARNING
+  ERROR
+}
+
 model User {
-  id           String   @id @default(uuid())
+  id           String   @id @default(uuid()) @db.Uuid
   name         String
   email        String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdGroups           Group[]              @relation("GroupCreator")
+  groupMemberships        GroupMember[]
+  paidExpenses            Expense[]            @relation("ExpensePayer")
+  createdExpenses         Expense[]            @relation("ExpenseCreator")
+  expenseParticipations   ExpenseParticipant[]
+  settlementsPaid         Settlement[]         @relation("SettlementPayer")
+  settlementsReceived     Settlement[]         @relation("SettlementRecipient")
+  recordedSettlements     Settlement[]         @relation("SettlementRecorder")
+  imports                 Import[]
+  resolvedImportAnomalies ImportAnomaly[]      @relation("AnomalyResolver")
 
   @@map("users")
 }
 
+model Group {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy   User          @relation("GroupCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  members     GroupMember[]
+  expenses    Expense[]
+  settlements Settlement[]
+  imports     Import[]
+
+  @@index([createdById])
+  @@map("groups")
+}
+
+model GroupMember {
+  id       String          @id @default(uuid()) @db.Uuid
+  groupId  String          @map("group_id") @db.Uuid
+  userId   String          @map("user_id") @db.Uuid
+  role     GroupMemberRole @default(MEMBER)
+  joinedAt DateTime        @default(now()) @map("joined_at") @db.Timestamptz(3)
+  leftAt   DateTime?       @map("left_at") @db.Timestamptz(3)
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, userId, joinedAt])
+  @@index([groupId, leftAt])
+  @@index([userId, leftAt])
+  @@map("group_members")
+}
+
+model Expense {
+  id          String             @id @default(uuid()) @db.Uuid
+  groupId     String             @map("group_id") @db.Uuid
+  paidById    String             @map("paid_by_id") @db.Uuid
+  createdById String             @map("created_by_id") @db.Uuid
+  importId    String?            @map("import_id") @db.Uuid
+  description String
+  amount      Decimal            @db.Decimal(19, 4)
+  currency    String             @default("USD") @db.Char(3)
+  splitMethod ExpenseSplitMethod @default(EXACT) @map("split_method")
+  expenseDate DateTime           @map("expense_date") @db.Date
+  notes       String?
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  group        Group                @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  paidBy       User                 @relation("ExpensePayer", fields: [paidById], references: [id], onDelete: Restrict)
+  createdBy    User                 @relation("ExpenseCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  import       Import?              @relation(fields: [importId], references: [id], onDelete: SetNull)
+  participants ExpenseParticipant[]
+
+  @@index([groupId, expenseDate])
+  @@index([paidById])
+  @@index([createdById])
+  @@index([importId])
+  @@map("expenses")
+}
+
+model ExpenseParticipant {
+  expenseId String  @map("expense_id") @db.Uuid
+  userId    String  @map("user_id") @db.Uuid
+  amount    Decimal @db.Decimal(19, 4)
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([expenseId, userId])
+  @@index([userId])
+  @@map("expense_participants")
+}
+
+model Settlement {
+  id           String   @id @default(uuid()) @db.Uuid
+  groupId      String   @map("group_id") @db.Uuid
+  paidById     String   @map("paid_by_id") @db.Uuid
+  paidToId     String   @map("paid_to_id") @db.Uuid
+  recordedById String   @map("recorded_by_id") @db.Uuid
+  amount       Decimal  @db.Decimal(19, 4)
+  currency     String   @default("USD") @db.Char(3)
+  settledAt    DateTime @default(now()) @map("settled_at") @db.Timestamptz(3)
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  group      Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  paidBy     User  @relation("SettlementPayer", fields: [paidById], references: [id], onDelete: Restrict)
+  paidTo     User  @relation("SettlementRecipient", fields: [paidToId], references: [id], onDelete: Restrict)
+  recordedBy User  @relation("SettlementRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  @@index([groupId, settledAt])
+  @@index([paidById])
+  @@index([paidToId])
+  @@index([recordedById])
+  @@map("settlements")
+}
+
+model Import {
+  id            String       @id @default(uuid()) @db.Uuid
+  groupId       String       @map("group_id") @db.Uuid
+  importedById  String       @map("imported_by_id") @db.Uuid
+  fileName      String       @map("file_name")
+  fileHash      String       @map("file_hash")
+  status        ImportStatus @default(PENDING)
+  totalRows     Int?         @map("total_rows")
+  importedRows  Int          @default(0) @map("imported_rows")
+  anomalousRows Int          @default(0) @map("anomalous_rows")
+  startedAt     DateTime?    @map("started_at") @db.Timestamptz(3)
+  completedAt   DateTime?    @map("completed_at") @db.Timestamptz(3)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  group      Group           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  importedBy User            @relation(fields: [importedById], references: [id], onDelete: Restrict)
+  expenses   Expense[]
+  anomalies  ImportAnomaly[]
+
+  @@unique([groupId, fileHash])
+  @@index([groupId, createdAt])
+  @@index([importedById])
+  @@index([status])
+  @@map("imports")
+}
+
+model ImportAnomaly {
+  id           String          @id @default(uuid()) @db.Uuid
+  importId     String          @map("import_id") @db.Uuid
+  resolvedById String?         @map("resolved_by_id") @db.Uuid
+  rowNumber    Int?            @map("row_number")
+  code         String
+  message      String
+  severity     AnomalySeverity
+  rawData      Json?           @map("raw_data")
+  resolvedAt   DateTime?       @map("resolved_at") @db.Timestamptz(3)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  import     Import @relation(fields: [importId], references: [id], onDelete: Cascade)
+  resolvedBy User?  @relation("AnomalyResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([importId, severity])
+  @@index([importId, resolvedAt])
+  @@index([resolvedById])
+  @@map("import_anomalies")
+}
