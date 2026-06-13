@@ -16,6 +16,20 @@ const groupInclude = {
   },
 };
 
+export async function listUserGroups(userId) {
+  const memberships = await prisma.groupMember.findMany({
+    where: { userId },
+    include: {
+      group: {
+        include: groupInclude,
+      },
+    },
+    orderBy: { joinedAt: "desc" },
+  });
+
+  return memberships.map((m) => m.group);
+}
+
 export async function createGroup(userId, input) {
   return prisma.$transaction(async (transaction) => {
     const group = await transaction.group.create({

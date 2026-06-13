@@ -18,6 +18,7 @@ vi.mock("../src/lib/prisma.js", () => ({
       create: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+      findMany: vi.fn(),
     },
     user: {
       findUnique: vi.fn(),
@@ -77,6 +78,31 @@ describe("POST /api/groups", () => {
 
     expect(response.status).toBe(401);
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/groups", () => {
+  it("returns a list of groups where the user is a member", async () => {
+    prisma.groupMember.findMany.mockResolvedValue([
+      {
+        group: {
+          id: groupId,
+          name: "Summer Trip",
+          description: null,
+          createdById: creatorId,
+          members: [],
+        },
+      },
+    ]);
+
+    const response = await request(app)
+      .get("/api/groups")
+      .set("Authorization", authorization);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.groups).toEqual([
+      expect.objectContaining({ id: groupId, name: "Summer Trip" }),
+    ]);
   });
 });
 

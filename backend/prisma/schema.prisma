@@ -16,6 +16,7 @@ enum ExpenseSplitMethod {
   EQUAL
   EXACT
   PERCENTAGE
+  CUSTOM
 }
 
 enum ImportStatus {

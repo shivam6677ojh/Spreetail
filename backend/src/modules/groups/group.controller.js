@@ -2,6 +2,7 @@ import {
   addGroupMember,
   createGroup,
   deleteGroup,
+  listUserGroups,
   removeGroupMember,
   updateGroup,
 } from "./group.service.js";
@@ -13,6 +14,11 @@ import {
   removeMemberSchema,
   updateGroupSchema,
 } from "./group.schemas.js";
+
+export async function list(request, response) {
+  const groups = await listUserGroups(request.auth.userId);
+  response.status(200).json({ data: { groups } });
+}
 
 export async function create(request, response) {
   const input = createGroupSchema.parse(request.body);

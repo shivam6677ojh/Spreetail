@@ -36,5 +36,8 @@ describe("initial expense schema migration", () => {
     expect(migration).toContain("settlements_positive_amount_check");
     expect(migration).toContain("expense_participants_nonnegative_amount_check");
   });
-});
 
+  it("supports custom expense splits", () => {
+    expect(migration).toContain("'CUSTOM'");
+  });
+});
