@@ -22,160 +22,176 @@ export async function calculateGroupBalances(groupId, userId) {
     where: { groupId },
   });
 
-  // 3. Initialize balances map
-  const balancesMap = {};
-  for (const member of members) {
-    balancesMap[member.userId] = {
-      userId: member.userId,
-      name: member.user.name,
-      email: member.user.email,
-      joinedAt: member.joinedAt,
-      leftAt: member.leftAt,
-      totalPaid: new Prisma.Decimal(0),
-      totalOwed: new Prisma.Decimal(0),
-      settlementsPaid: new Prisma.Decimal(0),
-      settlementsReceived: new Prisma.Decimal(0),
-    };
+  // Find all unique currencies across expenses and settlements
+  const currencies = [...new Set([
+    ...expenses.map(e => e.currency),
+    ...settlements.map(s => s.currency)
+  ])];
+  if (currencies.length === 0) {
+    currencies.push("USD");
   }
 
-  // 4. Calculate total spent and owed from expenses
-  let totalSpending = new Prisma.Decimal(0);
-  for (const expense of expenses) {
-    const amount = new Prisma.Decimal(expense.amount);
-    totalSpending = totalSpending.plus(amount);
+  const result = {};
 
-    // Add paid amount to payer if they are in balancesMap
-    if (balancesMap[expense.paidById]) {
-      balancesMap[expense.paidById].totalPaid = balancesMap[expense.paidById].totalPaid.plus(amount);
+  for (const currency of currencies) {
+    // Initialize balances map
+    const balancesMap = {};
+    for (const member of members) {
+      balancesMap[member.userId] = {
+        userId: member.userId,
+        name: member.user.name,
+        email: member.user.email,
+        joinedAt: member.joinedAt,
+        leftAt: member.leftAt,
+        totalPaid: new Prisma.Decimal(0),
+        totalOwed: new Prisma.Decimal(0),
+        settlementsPaid: new Prisma.Decimal(0),
+        settlementsReceived: new Prisma.Decimal(0),
+      };
     }
 
-    // Add owed shares to participants
-    for (const participant of expense.participants) {
-      if (balancesMap[participant.userId]) {
-        const pAmount = new Prisma.Decimal(participant.amount);
-        balancesMap[participant.userId].totalOwed = balancesMap[participant.userId].totalOwed.plus(pAmount);
+    const currencyExpenses = expenses.filter(e => e.currency === currency);
+    const currencySettlements = settlements.filter(s => s.currency === currency);
+
+    // Calculate total spent and owed from expenses
+    let totalSpending = new Prisma.Decimal(0);
+    for (const expense of currencyExpenses) {
+      const amount = new Prisma.Decimal(expense.amount);
+      totalSpending = totalSpending.plus(amount);
+
+      // Add paid amount to payer if they are in balancesMap
+      if (balancesMap[expense.paidById]) {
+        balancesMap[expense.paidById].totalPaid = balancesMap[expense.paidById].totalPaid.plus(amount);
+      }
+
+      // Add owed shares to participants
+      for (const participant of expense.participants) {
+        if (balancesMap[participant.userId]) {
+          const pAmount = new Prisma.Decimal(participant.amount);
+          balancesMap[participant.userId].totalOwed = balancesMap[participant.userId].totalOwed.plus(pAmount);
+        }
       }
     }
-  }
 
-  // 5. Calculate settlements paid and received
-  for (const settlement of settlements) {
-    const amount = new Prisma.Decimal(settlement.amount);
+    // Calculate settlements paid and received
+    for (const settlement of currencySettlements) {
+      const amount = new Prisma.Decimal(settlement.amount);
 
-    if (balancesMap[settlement.paidById]) {
-      balancesMap[settlement.paidById].settlementsPaid = balancesMap[settlement.paidById].settlementsPaid.plus(amount);
+      if (balancesMap[settlement.paidById]) {
+        balancesMap[settlement.paidById].settlementsPaid = balancesMap[settlement.paidById].settlementsPaid.plus(amount);
+      }
+
+      if (balancesMap[settlement.paidToId]) {
+        balancesMap[settlement.paidToId].settlementsReceived = balancesMap[settlement.paidToId].settlementsReceived.plus(amount);
+      }
     }
 
-    if (balancesMap[settlement.paidToId]) {
-      balancesMap[settlement.paidToId].settlementsReceived = balancesMap[settlement.paidToId].settlementsReceived.plus(amount);
+    // Calculate net balance for each user
+    const memberBalances = [];
+    for (const uId in balancesMap) {
+      const userBal = balancesMap[uId];
+      const netBalance = userBal.totalPaid
+        .minus(userBal.totalOwed)
+        .plus(userBal.settlementsPaid)
+        .minus(userBal.settlementsReceived);
+
+      userBal.netBalance = netBalance;
+      memberBalances.push(userBal);
     }
-  }
 
-  // 6. Calculate net balance for each user
-  // Net Balance = (Total Paid as Payer of Expenses) - (Total Owed as Participant of Expenses) + (Total Paid in Settlements) - (Total Received in Settlements)
-  const memberBalances = [];
-  for (const uId in balancesMap) {
-    const userBal = balancesMap[uId];
-    const netBalance = userBal.totalPaid
-      .minus(userBal.totalOwed)
-      .plus(userBal.settlementsPaid)
-      .minus(userBal.settlementsReceived);
+    // Compute minimized transfers (Who pays whom)
+    const debtors = [];
+    const creditors = [];
 
-    userBal.netBalance = netBalance;
-    memberBalances.push(userBal);
-  }
+    for (const mb of memberBalances) {
+      if (mb.netBalance.lessThan(-0.0001)) {
+        debtors.push({
+          userId: mb.userId,
+          name: mb.name,
+          email: mb.email,
+          balance: mb.netBalance,
+        });
+      } else if (mb.netBalance.greaterThan(0.0001)) {
+        creditors.push({
+          userId: mb.userId,
+          name: mb.name,
+          email: mb.email,
+          balance: mb.netBalance,
+        });
+      }
+    }
 
-  // 7. Compute minimized transfers (Who pays whom)
-  const debtors = [];
-  const creditors = [];
+    const transfers = [];
 
-  for (const mb of memberBalances) {
-    if (mb.netBalance.lessThan(-0.0001)) {
-      debtors.push({
+    while (debtors.length > 0 && creditors.length > 0) {
+      debtors.sort((a, b) => a.balance.comparedTo(b.balance)); // most negative first
+      creditors.sort((a, b) => b.balance.comparedTo(a.balance)); // most positive first
+
+      const debtor = debtors[0];
+      const creditor = creditors[0];
+
+      const debtVal = debtor.balance.negated();
+      const creditVal = creditor.balance;
+
+      const transferAmount = Prisma.Decimal.min(debtVal, creditVal);
+
+      transfers.push({
+        from: debtor.userId,
+        fromName: debtor.name,
+        fromEmail: debtor.email,
+        to: creditor.userId,
+        toName: creditor.name,
+        toEmail: creditor.email,
+        amount: transferAmount.toFixed(4),
+      });
+
+      debtor.balance = debtor.balance.plus(transferAmount);
+      creditor.balance = creditor.balance.minus(transferAmount);
+
+      if (debtor.balance.absoluteValue().lessThanOrEqualTo(0.0001)) {
+        debtors.shift();
+      }
+      if (creditor.balance.absoluteValue().lessThanOrEqualTo(0.0001)) {
+        creditors.shift();
+      }
+    }
+
+    // Format decimal amounts to strings for JSON response
+    const formattedBalances = {};
+    const summaryMembers = [];
+
+    for (const mb of memberBalances) {
+      formattedBalances[mb.userId] = {
+        name: mb.name,
+        email: mb.email,
+        netBalance: mb.netBalance.toFixed(4),
+        joinedAt: mb.joinedAt,
+        leftAt: mb.leftAt,
+      };
+
+      summaryMembers.push({
         userId: mb.userId,
         name: mb.name,
         email: mb.email,
-        balance: mb.netBalance,
-      });
-    } else if (mb.netBalance.greaterThan(0.0001)) {
-      creditors.push({
-        userId: mb.userId,
-        name: mb.name,
-        email: mb.email,
-        balance: mb.netBalance,
+        totalSpent: mb.totalPaid.toFixed(4),
+        totalOwed: mb.totalOwed.toFixed(4),
+        settlementsPaid: mb.settlementsPaid.toFixed(4),
+        settlementsReceived: mb.settlementsReceived.toFixed(4),
+        netBalance: mb.netBalance.toFixed(4),
       });
     }
-  }
 
-  const transfers = [];
-
-  while (debtors.length > 0 && creditors.length > 0) {
-    // Sort so we always pop/match the largest debtor and creditor
-    debtors.sort((a, b) => a.balance.comparedTo(b.balance)); // most negative first
-    creditors.sort((a, b) => b.balance.comparedTo(a.balance)); // most positive first
-
-    const debtor = debtors[0];
-    const creditor = creditors[0];
-
-    const debtVal = debtor.balance.negated();
-    const creditVal = creditor.balance;
-
-    const transferAmount = Prisma.Decimal.min(debtVal, creditVal);
-
-    transfers.push({
-      from: debtor.userId,
-      fromName: debtor.name,
-      fromEmail: debtor.email,
-      to: creditor.userId,
-      toName: creditor.name,
-      toEmail: creditor.email,
-      amount: transferAmount.toFixed(4),
-    });
-
-    debtor.balance = debtor.balance.plus(transferAmount);
-    creditor.balance = creditor.balance.minus(transferAmount);
-
-    if (debtor.balance.absoluteValue().lessThanOrEqualTo(0.0001)) {
-      debtors.shift();
-    }
-    if (creditor.balance.absoluteValue().lessThanOrEqualTo(0.0001)) {
-      creditors.shift();
-    }
-  }
-
-  // Format decimal amounts to strings for JSON response
-  const formattedBalances = {};
-  const summaryMembers = [];
-
-  for (const mb of memberBalances) {
-    formattedBalances[mb.userId] = {
-      name: mb.name,
-      email: mb.email,
-      netBalance: mb.netBalance.toFixed(4),
-      joinedAt: mb.joinedAt,
-      leftAt: mb.leftAt,
+    result[currency] = {
+      balances: formattedBalances,
+      summary: {
+        totalSpending: totalSpending.toFixed(4),
+        members: summaryMembers,
+      },
+      transfers,
     };
-
-    summaryMembers.push({
-      userId: mb.userId,
-      name: mb.name,
-      email: mb.email,
-      totalSpent: mb.totalPaid.toFixed(4),
-      totalOwed: mb.totalOwed.toFixed(4),
-      settlementsPaid: mb.settlementsPaid.toFixed(4),
-      settlementsReceived: mb.settlementsReceived.toFixed(4),
-      netBalance: mb.netBalance.toFixed(4),
-    });
   }
 
-  return {
-    balances: formattedBalances,
-    summary: {
-      totalSpending: totalSpending.toFixed(4),
-      members: summaryMembers,
-    },
-    transfers,
-  };
+  return result;
 }
 
 async function requireGroupMember(groupId, userId) {

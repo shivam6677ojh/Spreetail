@@ -14,6 +14,24 @@ const expenseInclude = {
 
 export async function createExpense(groupId, userId, input) {
   await requireActiveMember(groupId, userId);
+  
+  // Prevent duplicate submissions within 15 seconds
+  const recentDuplicate = await prisma.expense.findFirst({
+    where: {
+      groupId,
+      description: input.description,
+      amount: input.amount,
+      paidById: input.paidById,
+      splitMethod: input.splitMethod,
+      createdAt: {
+        gte: new Date(Date.now() - 15000),
+      },
+    },
+  });
+  if (recentDuplicate) {
+    throw new AppError("A duplicate expense was already created in the last 15 seconds", 400);
+  }
+
   const participantAmounts = calculateParticipantAmounts(
     input.amount,
     input.splitMethod,

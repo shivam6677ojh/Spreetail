@@ -12,6 +12,22 @@ export async function createSettlement(groupId, recorderUserId, input) {
   // 1. Ensure recorder is an active member of the group
   await requireActiveMember(groupId, recorderUserId);
 
+  // Prevent duplicate submissions within 15 seconds
+  const recentDuplicate = await prisma.settlement.findFirst({
+    where: {
+      groupId,
+      paidById: input.paidById,
+      paidToId: input.paidToId,
+      amount: input.amount,
+      createdAt: {
+        gte: new Date(Date.now() - 15000),
+      },
+    },
+  });
+  if (recentDuplicate) {
+    throw new AppError("A duplicate settlement was already recorded in the last 15 seconds", 400);
+  }
+
   // 2. Validate payer and recipient are different
   if (input.paidById === input.paidToId) {
     throw new AppError("Payer and recipient must be different users", 400);

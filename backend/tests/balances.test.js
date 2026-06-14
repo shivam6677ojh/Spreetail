@@ -62,11 +62,11 @@ describe("GET /api/groups/:groupId/balances", () => {
       .set("Authorization", authorization);
 
     expect(response.status).toBe(200);
-    expect(response.body.data.balances[aliceId].netBalance).toBe("20.0000");
-    expect(response.body.data.balances[bobId].netBalance).toBe("-10.0000");
-    expect(response.body.data.balances[charlieId].netBalance).toBe("-10.0000");
+    expect(response.body.data.USD.balances[aliceId].netBalance).toBe("20.0000");
+    expect(response.body.data.USD.balances[bobId].netBalance).toBe("-10.0000");
+    expect(response.body.data.USD.balances[charlieId].netBalance).toBe("-10.0000");
 
-    expect(response.body.data.transfers).toEqual(
+    expect(response.body.data.USD.transfers).toEqual(
       expect.arrayContaining([
         {
           from: bobId,
@@ -124,14 +124,14 @@ describe("GET /api/groups/:groupId/balances", () => {
 
     expect(response.status).toBe(200);
     // Alice is now owed $10 (was $20, Bob paid $10)
-    expect(response.body.data.balances[aliceId].netBalance).toBe("10.0000");
+    expect(response.body.data.USD.balances[aliceId].netBalance).toBe("10.0000");
     // Bob now owes $0 (was -$10, paid $10)
-    expect(response.body.data.balances[bobId].netBalance).toBe("0.0000");
+    expect(response.body.data.USD.balances[bobId].netBalance).toBe("0.0000");
     // Charlie still owes $10
-    expect(response.body.data.balances[charlieId].netBalance).toBe("-10.0000");
+    expect(response.body.data.USD.balances[charlieId].netBalance).toBe("-10.0000");
 
     // Suggest transfers: only Charlie -> Alice $10
-    expect(response.body.data.transfers).toEqual([
+    expect(response.body.data.USD.transfers).toEqual([
       {
         from: charlieId,
         fromName: "Charlie",
@@ -181,11 +181,11 @@ describe("GET /api/groups/:groupId/balances", () => {
       .set("Authorization", authorization);
 
     expect(response.status).toBe(200);
-    expect(response.body.data.balances[aliceId].netBalance).toBe("-10.0000");
-    expect(response.body.data.balances[bobId].netBalance).toBe("0.0000");
-    expect(response.body.data.balances[charlieId].netBalance).toBe("10.0000");
+    expect(response.body.data.USD.balances[aliceId].netBalance).toBe("-10.0000");
+    expect(response.body.data.USD.balances[bobId].netBalance).toBe("0.0000");
+    expect(response.body.data.USD.balances[charlieId].netBalance).toBe("10.0000");
 
-    expect(response.body.data.transfers).toEqual([
+    expect(response.body.data.USD.transfers).toEqual([
       {
         from: aliceId,
         fromName: "Alice",
