@@ -54,10 +54,3 @@ This document outlines the AI assistance utilized during the development of this
 * **The Mistake**: In the initial design of the Settlements controller, the AI extracted the recorder's user ID from `request.user.id`.
 * **How We Caught It**: Tests failed with `500 Internal Server Error` due to `TypeError: Cannot read properties of undefined (reading 'id')`.
 * **The Correction**: Investigating the `authenticate.js` middleware revealed that it populates the authenticated payload in `request.auth.userId` rather than `request.user`. The controller was corrected to access `request.auth.userId`, matching the existing middleware architecture.
-
----
-
-### Case 4: Database Check Constraints on Negative Amounts
-* **The Mistake**: The AI assumed that storing negative amounts (refunds) in PostgreSQL would work out of the box because the Prisma model had a `Decimal` type.
-* **How We Caught It**: Importing a negative amount row (Row 26, Parasailing refund) crashed the database insert with a PostgreSQL check constraint violation: `db error: check constraint "expenses_positive_amount_check" violated`.
-* **The Correction**: Created and executed a script `drop_constraints.js` to drop `expenses_positive_amount_check` and `expense_participants_nonnegative_amount_check` constraints from the PostgreSQL database, allowing negative values to be saved natively.
