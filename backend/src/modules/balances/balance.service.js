@@ -24,8 +24,8 @@ export async function calculateGroupBalances(groupId, userId) {
 
   // Find all unique currencies across expenses and settlements
   const currencies = [...new Set([
-    ...expenses.map(e => e.currency),
-    ...settlements.map(s => s.currency)
+    ...expenses.map(e => e.currency || "USD"),
+    ...settlements.map(s => s.currency || "USD")
   ])];
   if (currencies.length === 0) {
     currencies.push("USD");
@@ -50,8 +50,8 @@ export async function calculateGroupBalances(groupId, userId) {
       };
     }
 
-    const currencyExpenses = expenses.filter(e => e.currency === currency);
-    const currencySettlements = settlements.filter(s => s.currency === currency);
+    const currencyExpenses = expenses.filter(e => (e.currency || "USD") === currency);
+    const currencySettlements = settlements.filter(s => (s.currency || "USD") === currency);
 
     // Calculate total spent and owed from expenses
     let totalSpending = new Prisma.Decimal(0);

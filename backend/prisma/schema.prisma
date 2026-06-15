@@ -136,6 +136,7 @@ model Settlement {
   paidById     String   @map("paid_by_id") @db.Uuid
   paidToId     String   @map("paid_to_id") @db.Uuid
   recordedById String   @map("recorded_by_id") @db.Uuid
+  importId     String?  @map("import_id") @db.Uuid
   amount       Decimal  @db.Decimal(19, 4)
   currency     String   @default("USD") @db.Char(3)
   settledAt    DateTime @default(now()) @map("settled_at") @db.Timestamptz(3)
@@ -143,15 +144,17 @@ model Settlement {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  group      Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  paidBy     User  @relation("SettlementPayer", fields: [paidById], references: [id], onDelete: Restrict)
-  paidTo     User  @relation("SettlementRecipient", fields: [paidToId], references: [id], onDelete: Restrict)
-  recordedBy User  @relation("SettlementRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  group      Group   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  paidBy     User    @relation("SettlementPayer", fields: [paidById], references: [id], onDelete: Restrict)
+  paidTo     User    @relation("SettlementRecipient", fields: [paidToId], references: [id], onDelete: Restrict)
+  recordedBy User    @relation("SettlementRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  import     Import? @relation(fields: [importId], references: [id], onDelete: SetNull)
 
   @@index([groupId, settledAt])
   @@index([paidById])
   @@index([paidToId])
   @@index([recordedById])
+  @@index([importId])
   @@map("settlements")
 }
 
@@ -170,10 +173,11 @@ model Import {
   createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  group      Group           @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  importedBy User            @relation(fields: [importedById], references: [id], onDelete: Restrict)
-  expenses   Expense[]
-  anomalies  ImportAnomaly[]
+  group       Group           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  importedBy  User            @relation(fields: [importedById], references: [id], onDelete: Restrict)
+  expenses    Expense[]
+  settlements Settlement[]
+  anomalies   ImportAnomaly[]
 
   @@unique([groupId, fileHash])
   @@index([groupId, createdAt])

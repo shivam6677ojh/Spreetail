@@ -24,6 +24,7 @@ import {
   create as createImport,
   list as listImports,
   report as getImportReport,
+  remove as removeImport,
 } from "../modules/imports/import.controller.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -43,6 +44,7 @@ groupRouter.get("/:groupId/balances", asyncHandler(getBalances));
 groupRouter.post("/:groupId/imports", asyncHandler(createImport));
 groupRouter.get("/:groupId/imports", asyncHandler(listImports));
 groupRouter.get("/:groupId/imports/:importId", asyncHandler(getImportReport));
+groupRouter.delete("/:groupId/imports/:importId", asyncHandler(removeImport));
 groupRouter.patch("/:groupId", asyncHandler(update));
 groupRouter.delete("/:groupId", asyncHandler(remove));
 groupRouter.post("/:groupId/members", asyncHandler(addMember));

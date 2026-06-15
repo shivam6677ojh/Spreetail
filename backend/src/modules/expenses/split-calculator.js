@@ -8,8 +8,11 @@ export function calculateParticipantAmounts(amount, splitMethod, participants) {
   const total = decimal(amount);
   validateParticipantIds(participants);
 
-  if (total.lessThanOrEqualTo(0)) {
-    throw new AppError("Expense amount must be greater than zero", 400);
+  if (total.equals(0)) {
+    return participants.map(({ userId }) => ({
+      userId,
+      amount: decimal(0).toFixed(SCALE),
+    }));
   }
 
   if (splitMethod === "EQUAL") {
@@ -29,7 +32,7 @@ export function calculateParticipantAmounts(amount, splitMethod, participants) {
 
     return amounts.map(({ userId, amount: value }) => ({
       userId,
-      amount: normalized(value),
+      amount: normalized(value, true),
     }));
   }
 
@@ -77,7 +80,7 @@ function allocateByWeights(total, participants) {
       : total.times(weight).dividedBy(totalWeight).toDecimalPlaces(SCALE);
 
     allocated = allocated.plus(participantAmount);
-    return { userId, amount: normalized(participantAmount) };
+    return { userId, amount: normalized(participantAmount, true) };
   });
 }
 
@@ -103,8 +106,8 @@ function decimal(value) {
   }
 }
 
-function normalized(value) {
-  if (value.lessThanOrEqualTo(0)) {
+function normalized(value, isNegativeAllowed = true) {
+  if (!isNegativeAllowed && value.lessThanOrEqualTo(0)) {
     throw new AppError("Participant amounts must be greater than zero", 400);
   }
 

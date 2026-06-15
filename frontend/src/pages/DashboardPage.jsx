@@ -28,17 +28,23 @@ export function DashboardPage() {
       const balancePromises = fetchedGroups.map(async (g) => {
         try {
           const balRes = await apiClient.get(`/groups/${g.id}/balances`);
-          const userBal = balRes.data.data.balances[currentUser.id];
-          return { groupId: g.id, netBalance: userBal?.netBalance || "0.0000" };
+          const groupCurrenciesBal = {};
+          for (const currency in balRes.data.data) {
+            const userBal = balRes.data.data[currency]?.balances?.[currentUser.id];
+            if (userBal) {
+              groupCurrenciesBal[currency] = userBal.netBalance || "0.0000";
+            }
+          }
+          return { groupId: g.id, balances: groupCurrenciesBal };
         } catch {
-          return { groupId: g.id, netBalance: "0.0000" };
+          return { groupId: g.id, balances: {} };
         }
       });
 
       const balanceResults = await Promise.all(balancePromises);
       const balanceMap = {};
       for (const res of balanceResults) {
-        balanceMap[res.groupId] = res.netBalance;
+        balanceMap[res.groupId] = res.balances;
       }
       setBalances(balanceMap);
     } catch (err) {
@@ -76,14 +82,70 @@ export function DashboardPage() {
     }
   };
 
-  // Calculate overall summary (how much owed in total across all groups)
-  let totalOwed = 0;
-  let totalOwes = 0;
-  Object.values(balances).forEach((bal) => {
-    const val = parseFloat(bal);
-    if (val > 0) totalOwed += val;
-    else if (val < 0) totalOwes += Math.abs(val);
+  // Calculate overall summary (how much owed in total across all groups per currency)
+  const totalOwedByCurrency = {};
+  const totalOwesByCurrency = {};
+  const currencies = ["USD", "INR"];
+
+  Object.values(balances).forEach((groupBals) => {
+    for (const currency in groupBals) {
+      const val = parseFloat(groupBals[currency]);
+      if (val > 0.0001) {
+        totalOwedByCurrency[currency] = (totalOwedByCurrency[currency] || 0) + val;
+      } else if (val < -0.0001) {
+        totalOwesByCurrency[currency] = (totalOwesByCurrency[currency] || 0) + Math.abs(val);
+      }
+    }
   });
+
+  const netBalances = {};
+  currencies.forEach((c) => {
+    const owed = totalOwedByCurrency[c] || 0;
+    const owes = totalOwesByCurrency[c] || 0;
+    netBalances[c] = owed - owes;
+  });
+
+  const renderCurrencyList = (currencyMap, colorClass, prefix = "") => {
+    const activeEntries = currencies.map(c => ({
+      currency: c,
+      val: currencyMap[c] || 0
+    })).filter(entry => entry.val > 0.0001);
+
+    if (activeEntries.length === 0) {
+      return <span className="text-slate-100">$0.00</span>;
+    }
+
+    return activeEntries.map((entry) => {
+      const symbol = entry.currency === "INR" ? "₹" : "$";
+      return (
+        <span key={entry.currency} className={`${colorClass} block`}>
+          {prefix}{symbol}{entry.val.toFixed(2)}
+        </span>
+      );
+    });
+  };
+
+  const renderNetBalanceList = () => {
+    const activeEntries = currencies.map(c => ({
+      currency: c,
+      val: netBalances[c] || 0
+    })).filter(entry => Math.abs(entry.val) > 0.0001);
+
+    if (activeEntries.length === 0) {
+      return <span className="text-slate-100">$0.00</span>;
+    }
+
+    return activeEntries.map((entry) => {
+      const symbol = entry.currency === "INR" ? "₹" : "$";
+      const color = entry.val > 0.0001 ? "text-emerald-300" : "text-rose-300";
+      const sign = entry.val > 0.0001 ? "+" : entry.val < -0.0001 ? "-" : "";
+      return (
+        <span key={entry.currency} className={`${color} block`}>
+          {sign}{symbol}{Math.abs(entry.val).toFixed(2)}
+        </span>
+      );
+    });
+  };
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -102,23 +164,21 @@ export function DashboardPage() {
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3 border-t border-brand-500/30 pt-6">
             <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
               <span className="text-xs text-brand-200 uppercase tracking-wider font-semibold">Total you are owed</span>
-              <p className="mt-1 text-2xl font-bold text-emerald-300">+${totalOwed.toFixed(2)}</p>
+              <p className="mt-1 text-2xl font-bold text-emerald-300">
+                {renderCurrencyList(totalOwedByCurrency, "text-emerald-300", "+")}
+              </p>
             </div>
             <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
               <span className="text-xs text-brand-200 uppercase tracking-wider font-semibold">Total you owe</span>
-              <p className="mt-1 text-2xl font-bold text-rose-300">-${totalOwes.toFixed(2)}</p>
+              <p className="mt-1 text-2xl font-bold text-rose-300">
+                {renderCurrencyList(totalOwesByCurrency, "text-rose-300", "-")}
+              </p>
             </div>
             <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm flex flex-col justify-center">
               <span className="text-xs text-brand-200 uppercase tracking-wider font-semibold">Net Balance</span>
-              <p className={`mt-1 text-2xl font-bold ${
-                totalOwed - totalOwes > 0 
-                  ? "text-emerald-300" 
-                  : totalOwed - totalOwes < 0 
-                    ? "text-rose-300" 
-                    : "text-slate-100"
-              }`}>
-                {totalOwed - totalOwes > 0 ? "+" : ""}${(totalOwed - totalOwes).toFixed(2)}
-              </p>
+              <div className="mt-1 text-2xl font-bold">
+                {renderNetBalanceList()}
+              </div>
             </div>
           </div>
         </div>
@@ -193,21 +253,44 @@ export function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="mt-6 border-t border-slate-100 pt-4 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Your Balance</span>
-                  {netBal > 0.0001 ? (
-                    <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
-                      Owed: +${netBal.toFixed(2)}
-                    </span>
-                  ) : netBal < -0.0001 ? (
-                    <span className="text-sm font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-full">
-                      Owe: -${Math.abs(netBal).toFixed(2)}
-                    </span>
-                  ) : (
-                    <span className="text-sm font-bold text-slate-500 bg-slate-50 px-2.5 py-1 rounded-full">
-                      Settled up
-                    </span>
-                  )}
+                <div className="mt-6 border-t border-slate-100 pt-4 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Your Balance</span>
+                    {(() => {
+                      const groupBals = balances[group.id] || {};
+                      const activeBals = Object.entries(groupBals).filter(([_, val]) => Math.abs(parseFloat(val)) > 0.0001);
+                      
+                      if (activeBals.length === 0) {
+                        return (
+                          <span className="text-sm font-bold text-slate-500 bg-slate-50 px-2.5 py-1 rounded-full">
+                            Settled up
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <div className="flex flex-col gap-1 items-end">
+                          {activeBals.map(([currency, valStr]) => {
+                            const val = parseFloat(valStr);
+                            const symbol = currency === "INR" ? "₹" : "$";
+                            if (val > 0.0001) {
+                              return (
+                                <span key={currency} className="text-sm font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full animate-fade-in">
+                                  Owed: +{symbol}{val.toFixed(2)}
+                                </span>
+                              );
+                            } else {
+                              return (
+                                <span key={currency} className="text-sm font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-full animate-fade-in">
+                                  Owe: -{symbol}{Math.abs(val).toFixed(2)}
+                                </span>
+                              );
+                            }
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
               </Link>
             );

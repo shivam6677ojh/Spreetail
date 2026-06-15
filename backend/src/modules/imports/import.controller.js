@@ -1,4 +1,4 @@
-import { createImport, getImportReport, listImports } from "./import.service.js";
+import { createImport, getImportReport, listImports, deleteImport } from "./import.service.js";
 
 export async function create(request, response) {
   const { groupId } = request.params;
@@ -35,5 +35,15 @@ export async function report(request, response) {
   response.status(200).json({
     status: "success",
     data: { report },
+  });
+}
+
+export async function remove(request, response) {
+  const { groupId, importId } = request.params;
+  const result = await deleteImport(groupId, importId, request.auth.userId);
+
+  response.status(200).json({
+    status: "success",
+    data: result,
   });
 }

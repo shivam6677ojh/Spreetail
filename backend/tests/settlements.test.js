@@ -13,6 +13,7 @@ vi.mock("../src/lib/prisma.js", () => ({
     },
     settlement: {
       create: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
     },
   },
