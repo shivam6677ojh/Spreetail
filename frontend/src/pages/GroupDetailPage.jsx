@@ -413,6 +413,342 @@ export function GroupDetailPage() {
     }
   };
 
+  // Helper to download the import report as a PDF
+  const downloadReportPDF = (report) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Please allow popups to download the PDF report.");
+      return;
+    }
+
+    const escapeHtml = (str) => {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    };
+
+    const formatDate = (dateStr) => {
+      if (!dateStr) return new Date().toLocaleDateString();
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString();
+    };
+
+    const statusMap = {
+      COMPLETED: { text: "Completed", class: "status-completed" },
+      COMPLETED_WITH_ANOMALIES: { text: "Completed with Anomalies", class: "status-completed_with_anomalies" },
+      FAILED: { text: "Failed", class: "status-failed" }
+    };
+    const currentStatus = statusMap[report.status] || { text: report.status, class: "status-failed" };
+
+    const anomaliesHtml = report.anomalies && report.anomalies.length > 0
+      ? report.anomalies.map((anom) => {
+          let rawDataStr = "";
+          if (anom.rawData) {
+            rawDataStr = typeof anom.rawData === "object"
+              ? JSON.stringify(anom.rawData, null, 2)
+              : String(anom.rawData);
+          }
+          const rawDataBox = rawDataStr
+            ? `<div class="raw-data-box">${escapeHtml(rawDataStr)}</div>`
+            : "";
+          const severityClass = anom.severity === "ERROR" ? "severity-error" : "severity-warning";
+          return `
+            <tr>
+              <td class="row-num" style="width: 80px; text-align: center;">Row ${anom.rowNumber || "N/A"}</td>
+              <td style="width: 100px; text-align: center;">
+                <span class="severity-badge ${severityClass}">${escapeHtml(anom.severity)}</span>
+              </td>
+              <td>
+                <div class="anomaly-code">${escapeHtml(anom.code)}</div>
+                <div class="anomaly-msg">${escapeHtml(anom.message)}</div>
+                ${rawDataBox}
+              </td>
+            </tr>
+          `;
+        }).join("")
+      : `<tr><td colspan="3" style="text-align: center; color: #64748b; padding: 24px;">No anomalies detected. Clean import!</td></tr>`;
+
+    const docContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CSV Import Audit Report - ${escapeHtml(report.fileName)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      color: #1e293b;
+      margin: 0;
+      padding: 40px;
+      line-height: 1.5;
+      background-color: #ffffff;
+    }
+    h1, h2, h3, h4 {
+      font-family: 'Outfit', sans-serif;
+      margin: 0;
+    }
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 20px;
+      margin-bottom: 30px;
+    }
+    .logo-area {
+      font-family: 'Outfit', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .logo-area span {
+      color: #4f46e5;
+    }
+    .report-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #475569;
+      margin-top: 5px;
+    }
+    .meta-item {
+      font-size: 13px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .status-completed {
+      background-color: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+    }
+    .status-completed_with_anomalies {
+      background-color: #fffbeb;
+      color: #b45309;
+      border: 1px solid #fde68a;
+    }
+    .status-failed {
+      background-color: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-bottom: 35px;
+    }
+    .stat-card {
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .stat-val {
+      font-family: 'Outfit', sans-serif;
+      font-size: 28px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .stat-card.imported {
+      background-color: #f0fdf4;
+      border-color: #dcfce7;
+    }
+    .stat-card.imported .stat-val {
+      color: #15803d;
+    }
+    .stat-card.anomalous {
+      background-color: #fdf2f8;
+      border-color: #fce7f3;
+    }
+    .stat-card.anomalous .stat-val {
+      color: #be185d;
+    }
+    
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 15px;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 8px;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+    }
+    th {
+      background-color: #f1f5f9;
+      font-weight: 600;
+      text-align: left;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #475569;
+      padding: 10px 12px;
+      border-bottom: 2px solid #cbd5e1;
+    }
+    td {
+      padding: 12px;
+      font-size: 13px;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: top;
+    }
+    tr {
+      page-break-inside: avoid;
+    }
+    .row-num {
+      font-weight: 600;
+      color: #64748b;
+    }
+    .severity-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .severity-error {
+      background-color: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+    }
+    .severity-warning {
+      background-color: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fcd34d;
+    }
+    .anomaly-code {
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .anomaly-msg {
+      color: #334155;
+      margin-top: 2px;
+    }
+    .raw-data-box {
+      font-family: 'Fira Code', monospace;
+      font-size: 11px;
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 6px 10px;
+      margin-top: 6px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #475569;
+    }
+    
+    .footer {
+      text-align: center;
+      font-size: 11px;
+      color: #94a3b8;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 20px;
+      margin-top: 50px;
+      page-break-inside: avoid;
+    }
+    
+    @media print {
+      body {
+        padding: 20px;
+      }
+      .no-print {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header-container">
+    <div>
+      <div class="logo-area">Split<span>Wise</span> Shared Expenses</div>
+      <div class="report-title">CSV Import Audit Report</div>
+      <div class="meta-item"><strong>File Name:</strong> ${escapeHtml(report.fileName)}</div>
+      <div class="meta-item"><strong>Generated On:</strong> ${formatDate(new Date())}</div>
+    </div>
+    <div>
+      <span class="status-badge ${currentStatus.class}">${escapeHtml(currentStatus.text)}</span>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total CSV Rows</div>
+      <div class="stat-val">${report.totalRows || 0}</div>
+    </div>
+    <div class="stat-card imported">
+      <div class="stat-label">Successfully Imported</div>
+      <div class="stat-val">${report.importedRows || 0}</div>
+    </div>
+    <div class="stat-card anomalous">
+      <div class="stat-label">Anomalous / Skipped</div>
+      <div class="stat-val">${report.anomalousRows || 0}</div>
+    </div>
+  </div>
+
+  <div class="section-title">Detected Anomalies / Action Taken Logs</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 80px; text-align: center;">Location</th>
+        <th style="width: 100px; text-align: center;">Severity</th>
+        <th>Anomaly details & Actions Taken</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${anomaliesHtml}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    SplitWise Shared Expenses Application &copy; ${new Date().getFullYear()} - Audit Log Export
+  </div>
+
+  <script>
+    window.addEventListener('load', () => {
+      // Delay slightly to ensure fonts render before printing
+      setTimeout(() => {
+        window.print();
+        window.close();
+      }, 500);
+    });
+  </script>
+</body>
+</html>
+    `;
+
+    printWindow.document.write(docContent);
+    printWindow.document.close();
+  };
+
   // Delete import
   const handleImportDelete = async (impId) => {
     if (!window.confirm("Are you sure you want to delete this import? This will delete the import record and permanently remove all expenses created by this import.")) {
@@ -1565,6 +1901,13 @@ export function GroupDetailPage() {
             </div>
 
             <div className="mt-6 flex justify-end pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => downloadReportPDF(selectedReport)}
+                className="mr-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors cursor-pointer"
+              >
+                Download PDF
+              </button>
               <button
                 type="button"
                 onClick={() => setShowReportModal(false)}

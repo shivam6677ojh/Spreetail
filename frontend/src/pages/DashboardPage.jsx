@@ -230,7 +230,6 @@ export function DashboardPage() {
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {groups.map((group) => {
-            const netBal = parseFloat(balances[group.id] || "0.0000");
             return (
               <Link
                 key={group.id}
@@ -258,7 +257,7 @@ export function DashboardPage() {
                     <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Your Balance</span>
                     {(() => {
                       const groupBals = balances[group.id] || {};
-                      const activeBals = Object.entries(groupBals).filter(([_, val]) => Math.abs(parseFloat(val)) > 0.0001);
+                      const activeBals = Object.entries(groupBals).filter(([, val]) => Math.abs(parseFloat(val)) > 0.0001);
                       
                       if (activeBals.length === 0) {
                         return (
